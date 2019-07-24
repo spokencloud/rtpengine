@@ -55,6 +55,11 @@ struct stream_s {
 	int fd;
 	handler_t handler;
 	int forwarding_on:1;
+/* 	
+	int timer_fd;
+	handler_t timer_handler;
+*/
+
 };
 typedef struct stream_s stream_t;
 
@@ -140,6 +145,7 @@ struct output_s {
 	char full_filename[PATH_MAX], // path + filename
 		file_path[PATH_MAX],
 		file_name[PATH_MAX];
+	int file_suff;
 	const char *file_format;
 	unsigned long long db_id;
 
