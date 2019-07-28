@@ -92,6 +92,7 @@ decode_t *decoder_new(const char *payload_str, output_t *outp) {
 	decode_t *deco = g_slice_alloc0(sizeof(decode_t));
 	deco->dec = dec;
 	deco->mixer_idx = (unsigned int) -1;
+	deco->pause_start_pts = -1L;
 	return deco;
 }
 
@@ -206,7 +207,9 @@ int decoder_input(decode_t *deco, const str *data, unsigned long ts, ssrc_t *ssr
 		u_int64_t multipliedTs = ts * dec->def->clockrate_mult;
 		u_int64_t last_ts = dec->rtp_ts;
 		int shift_ts = multipliedTs - last_ts;
-		dbg("====> check pause/resume shift_ts = %d last_ts = %llu multipliedTs = %llu", shift_ts, last_ts, multipliedTs);
+		dbg("====> check pause/resume shift_ts = %d last_ts = %llu multipliedTs = %llu", shift_ts, 
+			(long long unsigned int)last_ts, 
+			(long long unsigned int)multipliedTs);
 		if ((shift_ts * 1000) / dec->in_format.clockrate > PAUSE_RECORDING_THRESHOLD){
 			// insert mask_beep, it is PCMU data from mask_beep.h
 			// This is not a right place to do it, is the input encoder is probably not PCMU
@@ -226,7 +229,7 @@ int decoder_input(decode_t *deco, const str *data, unsigned long ts, ssrc_t *ssr
 			while (shift_ts > 0){
 				int len = MIN(nb_samples, shift_ts);
 				pMaskData.len = len;
-				dbg("====> insert maskbeep[%d:%d]", pMask-maskbeep, len);
+				dbg("====> insert maskbeep[%d:%d]", (int)(pMask - maskbeep), len);
 				pMask = fill_mask_data(mask_data, len, pMask);
 				next_ts += len;
 				decoder_input_data(dec, &pMaskData, next_ts, decoder_got_frame, ssrc, deco);
@@ -245,4 +248,46 @@ void decoder_free(decode_t *deco) {
 	decoder_close(deco->dec);
 	resample_shutdown(&deco->mix_resampler);
 	g_slice_free1(sizeof(*deco), deco);
+}
+
+void decoder_start_mask_beep(decode_t * deco, ssrc_t* ssrc, time_t timediff) {
+	deco->pause_start_pts = deco->dec->pts;
+}
+
+void decoder_stop_mask_beep(decode_t * deco, ssrc_t* ssrc, time_t timediff) {
+	deco->pause_start_pts = -1L;
+}
+
+void decoder_insert_mask_beep(decode_t * deco, ssrc_t* ssrc, time_t timediff) {
+	decoder_t *dec = deco->dec;
+	int nb_samples = 160;
+	uint64_t delta_pts = timediff * (dec->in_format.clockrate / 1000);
+	uint64_t target_pts = delta_pts + deco->pause_start_pts;
+	uint64_t start_pos_in_mask_beep = dec->pts - deco->pause_start_pts;
+	int offset_mask_beep = start_pos_in_mask_beep % MASK_BEEP_LENGTH;
+	int shift_ts = target_pts - dec->pts;
+	//int pkt_num = (target_pts - dec->pts) / nb_samples;
+
+	dbg("====> decoder_insert_mask_beep: timediff=%lu, delta_pts=%llu, target_pts=%llu, start_pos=%llu, offset=%d, shift_ts=%d",
+	  timediff, 
+	  (long long unsigned int)delta_pts, 
+	  (long long unsigned int)target_pts, 
+	  (long long unsigned int)start_pos_in_mask_beep,
+	  offset_mask_beep, shift_ts);
+	unsigned char mask_data[nb_samples];
+	str pMaskData;
+	pMaskData.s = (char*)mask_data;
+	int len = nb_samples;
+	u_int64_t next_ts = dec->rtp_ts;
+	pMaskData.len = len;
+	const unsigned char* pMask = maskbeep + offset_mask_beep;
+	dbg("====> total len = %d", shift_ts);
+	while (shift_ts > 0){
+		dbg("====> insert maskbeep[%d:%d]", (int)(pMask - maskbeep), len);
+		pMask = fill_mask_data(mask_data, len, pMask);
+		next_ts += len;
+		decoder_input_data(dec, &pMaskData, next_ts, decoder_got_frame, ssrc, deco);
+		shift_ts -= len;
+		usleep(1000);
+	}
 }

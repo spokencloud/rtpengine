@@ -138,6 +138,7 @@ static void wait_for_signal(void) {
 
 static void cleanup(void) {
 	garbage_collect_all();
+	tcpserver_close();
 	metafile_cleanup();
 	inotify_cleanup();
 	epoll_cleanup();

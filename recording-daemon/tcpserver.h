@@ -23,4 +23,5 @@ struct tcpserver_s {
 typedef struct tcpserver_s tcpserver_t;
 
 
-int tcpserver_setup();
+int tcpserver_setup(void);
+void tcpserver_close(void);

@@ -1,5 +1,6 @@
 #include "tcpserver.h"
 #include "log.h"
+#include "metafile.h"
 
 tcpserver_t tcpserver = {
   .addr = INADDR_ANY, /* by default, listen on all local IP's   */
@@ -24,29 +25,61 @@ static void close_client(tcpclient_t* pClient){
     free(pClient);
 }
 
+#define MAX_ARG_NUMBER 16
+#define MAX_COMMAND_LENGTH 2048
 static void process_client(handler_t *handler){
     tcpclient_t* pClient = handler->ptr;
     if (pClient == NULL)
         return;
-    char buf[2048];
-    int rc = read(pClient->fd, buf, sizeof(buf));
-    if (rc == 0){
+    char buf[MAX_COMMAND_LENGTH];
+    int len = read(pClient->fd, buf, sizeof(buf));
+    if (len == 0){
         remove_client(pClient);
         close_client(pClient);
         return;
     }
-    else if (rc < 0){
+    else if (len < 0){
         ilog(LOG_ERR,  "recv: %s\n", strerror(errno)); 
         return;
     }
     // read in bytes;
-    if (strncmp(buf, "stopRecording", sizeof("stopRecording")-1) == 0){
+    int argc = 0;
+    char *argv[MAX_ARG_NUMBER];
+    argv[argc++] = buf;
+    int new_flag = 0;
+
+    if (len == MAX_COMMAND_LENGTH)
+        len--;
+
+    for (int i=0; i<len; i++){
+        if (buf[i] == ' '){
+            buf[i] = '\0';
+            new_flag = 1;
+        }
+        else{
+            if (new_flag){
+                if (argc < MAX_ARG_NUMBER)
+                    argv[argc++] = buf+i;
+                new_flag = 0;
+            }
+        }
+    }
+    buf[len] = '\0';
+    if (strcmp(argv[0], "stopRecording") == 0){
         dbg("====> stopRecording command: %s", buf);
+        if (argc < 2)
+            ilog(LOG_ERR, "Missing call id");
+        else
+            metafile_stop_recording(argv[1]);
     }
-    else if (strncmp(buf, "startRecording", sizeof("startRecording")-1) == 0){
+    else if (strcmp(argv[0], "startRecording") == 0){
        dbg("====> startRecording command: %s", buf);
+        if (argc < 2)
+            ilog(LOG_ERR, "Missing call id");
+        else
+            metafile_start_recording(argv[1]);
     }
-    else if (strncmp(buf, "health", sizeof("health")-1) == 0){
+    else if (strcmp(argv[0], "health") == 0){
         dbg("====> healthCheck command: %s", buf);
     }
     else {
@@ -77,7 +110,7 @@ static void accept_client(handler_t *handler){
 	if (epoll_add(fd, EPOLLIN, &pClient->handler)) {
         ilog(LOG_ERR, "epoll_add error, Error:[%d:%s]", errno, strerror(errno));		
 		close(fd);
-		return -1;
+		return;
 	}
 	pClient->fd = fd;
     for (int i=0; i<MAX_CLIENT_NUMBER; i++){
@@ -88,7 +121,7 @@ static void accept_client(handler_t *handler){
     }
 
  done:
-    return fd;
+    return;
 }
 
 
@@ -140,7 +173,7 @@ void tcpserver_close(){
     for (int i=0; i<MAX_CLIENT_NUMBER; i++){
         tcpclient_t *pClient = tcpserver.clients[i];
         if (pClient != NULL){
-            close(pClient);
+            close(pClient->fd);
             tcpserver.clients[i] = NULL;
         }
     }

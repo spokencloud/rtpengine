@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
+#include <sys/timerfd.h>
 #include "log.h"
 #include "stream.h"
 #include "garbage.h"
@@ -17,6 +18,8 @@
 #include "db.h"
 #include "forward.h"
 #include "tag.h"
+#include "decoder.h"
+#include "epoll.h"
 
 static pthread_mutex_t metafiles_lock = PTHREAD_MUTEX_INITIALIZER;
 static GHashTable *metafiles;
@@ -42,6 +45,7 @@ static void meta_free(void *ptr) {
 	g_ptr_array_free(mf->tags, TRUE);
 	if (mf->ssrc_hash)
 		g_hash_table_destroy(mf->ssrc_hash);
+
 	g_slice_free1(sizeof(*mf), mf);
 }
 
@@ -173,6 +177,24 @@ static void meta_section(metafile_t *mf, char *section, char *content, unsigned 
 		stream_forwarding_on(mf, lu, u);
 }
 
+// returns mf locked
+static metafile_t *metafile_get_by_call_id(char* call_id){
+	metafile_t *result = NULL;
+	pthread_mutex_lock(&metafiles_lock);
+	GList *mflist = g_hash_table_get_values(metafiles);
+	for (GList *l = mflist; l; l = l->next) {
+		metafile_t *mf = l->data;
+		if (strcmp(mf->call_id, call_id) == 0) {
+			result = mf;
+			break;
+		}
+	}
+	g_list_free(mflist);
+	if (result != NULL)
+		pthread_mutex_lock(&result->lock);
+	pthread_mutex_unlock(&metafiles_lock);
+	return result;
+}
 
 // returns mf locked
 static metafile_t *metafile_get(char *name) {
@@ -198,6 +220,7 @@ static metafile_t *metafile_get(char *name) {
 		pthread_mutex_init(&mf->payloads_lock, NULL);
 		pthread_mutex_init(&mf->mix_lock, NULL);
 		mf->ssrc_hash = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, ssrc_free);
+		mf->timer_fd = -1;
 	}
 
 	g_hash_table_insert(metafiles, mf->name, mf);
@@ -210,6 +233,18 @@ out:
 	return mf;
 }
 
+/* 
+int metafile_insert_decoder(metafile_t *mf, decode_t *decode){
+	for (int i=0; i<MAX_DECODERS_PER_CALL; i++){
+		if (mf->decoders[i] == NULL){
+			mf->decoders[i] = decode;
+			return i;
+		}
+	}
+	ilog(LOG_ERR, "Call %s has too many decoders.", mf->call_id);
+	return -1;
+}
+*/
 
 void metafile_change(char *name) {
 	metafile_t *mf = metafile_get(name);
@@ -353,3 +388,104 @@ void metafile_cleanup(void) {
 	g_list_free(mflist);
 	g_hash_table_destroy(metafiles);
 }
+
+static void metafile_traverse_decoders(metafile_t *mf, decoder_visitor_t visitor_fun, time_t timediff) {
+	GList *ssrclist = g_hash_table_get_values(mf->ssrc_hash);
+	for (GList *l = ssrclist; l; l = l->next) {
+		ssrc_t *ssrc = l->data;
+		if (ssrc != NULL){
+			for (int j=0; j<128; j++){
+				if (ssrc->decoders[j] != NULL){
+					(*visitor_fun)(ssrc->decoders[j], ssrc, timediff);
+				}
+			}
+		}
+	}
+}
+
+static void metafile_timer_handler(handler_t *handler) {
+    uint64_t exp = 0;
+    metafile_t *mf = handler->ptr;
+    read(mf->timer_fd, &exp, sizeof(uint64_t)); 
+	time_t now = time(NULL);
+	metafile_traverse_decoders(mf, decoder_insert_mask_beep, now - mf->pause_start_time);
+}
+
+#define CHECK_MASK_BEEP_INTERVAL 1
+int timerfd_init(metafile_t *mf)
+{
+	if (mf->timer_fd != -1)
+		return 0;
+
+    int tmfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+    if (tmfd < 0) {
+        ilog(LOG_ERR, "timerfd_create error, Error:[%d:%s]", errno, strerror(errno));
+        return -1;
+    }
+	
+	struct itimerspec its;
+	its.it_value.tv_sec = CHECK_MASK_BEEP_INTERVAL;
+	its.it_value.tv_nsec = 0;
+	its.it_interval.tv_sec = CHECK_MASK_BEEP_INTERVAL;
+	its.it_interval.tv_nsec = 0;
+
+    int ret = timerfd_settime(tmfd, 0, &its, NULL);
+    if (ret < 0) {
+        ilog(LOG_ERR, "timerfd_settime error, Error:[%d:%s]", errno, strerror(errno));
+        close(tmfd);
+        return -1;
+    }
+
+	mf->timer_handler.ptr = mf;
+	mf->timer_handler.func = metafile_timer_handler;
+	if (epoll_add(tmfd, EPOLLIN, &mf->timer_handler)) {
+        ilog(LOG_ERR, "epoll_add error, Error:[%d:%s]", errno, strerror(errno));		
+		close(tmfd);
+		return -1;
+	}
+	mf->timer_fd = tmfd;
+
+    return 0;
+}
+
+int timerfd_destroy(metafile_t *mf)
+{
+	if (mf->timer_fd == -1)
+		return 0;
+	int tmfd = mf->timer_fd;
+	epoll_del(tmfd);
+	close(tmfd);
+	mf->timer_fd = -1;
+	return 0;
+}
+
+int metafile_stop_recording(char *call_id){
+	metafile_t *mf = metafile_get_by_call_id(call_id);
+	if (mf == NULL){
+		ilog(LOG_WARN, "Call %s does not exist", call_id);
+		pthread_mutex_unlock(&mf->lock);
+		return -1;
+	}
+	timerfd_init(mf);
+	mf->pause_start_time = time(NULL);
+
+	metafile_traverse_decoders(mf, decoder_start_mask_beep, 0);
+	pthread_mutex_unlock(&mf->lock);
+	return 0;
+}
+
+int metafile_start_recording(char *call_id){
+	metafile_t *mf = metafile_get_by_call_id(call_id);
+	if (mf == NULL){
+		ilog(LOG_WARN, "Call %s does not exist", call_id);
+		pthread_mutex_unlock(&mf->lock);
+		return -1;
+	}
+	timerfd_destroy(mf);
+	mf->pause_start_time = -1;
+
+	metafile_traverse_decoders(mf, decoder_stop_mask_beep, 0);
+	pthread_mutex_unlock(&mf->lock);
+	return 0;
+}
+
