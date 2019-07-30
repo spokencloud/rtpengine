@@ -55,6 +55,11 @@ struct stream_s {
 	int fd;
 	handler_t handler;
 	int forwarding_on:1;
+/* 	
+	int timer_fd;
+	handler_t timer_handler;
+*/
+
 };
 typedef struct stream_s stream_t;
 
@@ -133,6 +138,10 @@ struct metafile_s {
 
 	int recording_on:1;
 	int forwarding_on:1;
+
+	int timer_fd;
+	handler_t timer_handler;
+	time_t pause_start_time;
 };
 
 
@@ -163,6 +172,7 @@ struct decode_s {
 	decoder_t *dec;
 	resample_t mix_resampler;
 	unsigned int mixer_idx;
+	uint64_t pause_start_pts;
 };
 
 

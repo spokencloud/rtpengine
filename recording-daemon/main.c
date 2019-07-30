@@ -27,8 +27,7 @@
 #include "socket.h"
 #include "ssllib.h"
 #include "ahclient/ahclient.h"
-
-
+#include "tcpserver.h"
 
 int ktable = 0;
 int num_threads = 8;
@@ -102,7 +101,7 @@ static void setup(void) {
 	metafile_setup();
 	epoll_setup();
 	inotify_setup();
-
+	tcpserver_setup();
 }
 
 
@@ -154,6 +153,7 @@ static void cleanup(void) {
 #endif
 	
 	garbage_collect_all();
+	tcpserver_close();
 	metafile_cleanup();
 	inotify_cleanup();
 	epoll_cleanup();
@@ -229,15 +229,10 @@ static void options(int *argc, char ***argv) {
 		die("The spool-dir cannot be the same as the output-dir");
 }
 
-int launch_upload_service() {
-
-}
-
 int main(int argc, char **argv) {
 	options(&argc, &argv);
 	setup();
-	launch_upload_service();
-	daemonize();
+	//daemonize();
 	wpidfile();
 
 	service_notify("READY=1\n");

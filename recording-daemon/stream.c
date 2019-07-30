@@ -30,6 +30,14 @@ void stream_close(stream_t *stream) {
 	epoll_del(stream->fd);
 	close(stream->fd);
 	stream->fd = -1;
+/*
+	if (timer_fd != -1){
+		epoll_del(stream->timer_fd);
+		close(stream->timer_fd)
+		stream->timer_fd = -1;
+	}
+
+ */
 }
 
 void stream_free(stream_t *stream) {
@@ -122,7 +130,6 @@ out:
 	return ret;
 }
 
-
 // mf is locked
 void stream_open(metafile_t *mf, unsigned long id, char *name) {
 	dbg("opening stream %lu/%s", id, name);
@@ -144,6 +151,9 @@ void stream_open(metafile_t *mf, unsigned long id, char *name) {
 	stream->handler.ptr = stream;
 	stream->handler.func = stream_handler;
 	epoll_add(stream->fd, EPOLLIN, &stream->handler);
+
+	// init timer
+	// timerfd_init(stream); 
 }
 
 void stream_details(metafile_t *mf, unsigned long id, unsigned int tag) {
