@@ -202,7 +202,7 @@ const unsigned char* fill_mask_data(unsigned char* mask_data, int len, const uns
 
 int decoder_input(decode_t *deco, const str *data, unsigned long ts, ssrc_t *ssrc) {
 	decoder_t *dec = deco->dec;
-	if (G_UNLIKELY(dec->rtp_ts != (unsigned long) -1L)) {
+/* 	if (G_UNLIKELY(dec->rtp_ts != (unsigned long) -1L)) {
 		// shift pts according to rtp ts shift
 		u_int64_t multipliedTs = ts * dec->def->clockrate_mult;
 		u_int64_t last_ts = dec->rtp_ts;
@@ -239,6 +239,7 @@ int decoder_input(decode_t *deco, const str *data, unsigned long ts, ssrc_t *ssr
 		}
 
 	}
+*/
 	return decoder_input_data(dec, data, ts, decoder_got_frame, ssrc, deco);
 }
 
