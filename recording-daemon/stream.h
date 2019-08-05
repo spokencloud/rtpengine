@@ -9,4 +9,6 @@ void stream_forwarding_on(metafile_t *mf, unsigned long id, unsigned int on);
 void stream_close(stream_t *stream);
 void stream_free(stream_t *stream);
 
+void process_stream(stream_t *stream, unsigned char *buf , int len );
+
 #endif

@@ -7,6 +7,11 @@
 #define _WITH_AH_CLIENT 1
 #endif
 
+#define  CHANNEL_COUNT      (2)
+#define STREAM_ID_L_RTP     (0)
+#define STREAM_ID_R_RTP     (2)
+#define UIDLEN              (18)           
+
 #if _WITH_AH_CLIENT 
 #include "stream.h"
 #include "types.h"
@@ -14,7 +19,7 @@
 #include "arpa/inet.h"	//inet_addr
 #include <unistd.h>
 
-#define UIDLEN     18           // UID
+
 #ifndef BOOL
 typedef unsigned int BOOL;
 #endif

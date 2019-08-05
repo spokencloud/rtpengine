@@ -10,8 +10,6 @@
 #include <semaphore.h>
 #include <netinet/in.h>
 
-#define  CHANNEL_COUNT    2
-
 typedef struct audio_strem_header {
     char            signature[6];                  // "SPKSTM"
     char            call_id[18];

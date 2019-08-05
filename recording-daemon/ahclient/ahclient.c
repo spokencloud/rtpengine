@@ -37,8 +37,6 @@ typedef struct  ahclient
 //// ahclient related
 // A global singleton instance of ahclient
 ahclient_t * ahclient_instance = NULL;
-const int  STREAM_ID_L_RTP = 0;
-const int  STREAM_ID_R_RTP = 2;
 
 
 // WARN : it's not a thread safe singleton, should not be called from multiple threads

@@ -27,8 +27,7 @@
 #include "socket.h"
 #include "ssllib.h"
 #include "ahclient/ahclient.h"
-
-
+#include "pause_resume_processor/ps_processor.h"
 
 int ktable = 0;
 int num_threads = 8;
@@ -37,6 +36,7 @@ const char *spool_dir = "/var/spool/rtpengine";
 const char *output_dir = "/var/lib/rtpengine-recording";
 static const char *output_format = "wav";
 int output_mixed;
+const char *mix_filter = "amix";
 int output_single;
 int output_enabled = 1;
 int decoding_enabled;
@@ -60,8 +60,14 @@ struct rtpengine_common_config rtpe_common_config;
 BOOL g_enable_ah_client = TRUE;
 BOOL g_ah_transcribe_all = TRUE;
 char * g_ah_ip = "255.255.255.255"; // space reserved, will be read from /etc/rtpengine/rtpengine-recording.conf
-unsigned int g_ah_port = 5570;  // will be read from /etc/rtpengine/rtpengine-recording.conf
+unsigned int g_ah_port = 5570;  	// will be read from /etc/rtpengine/rtpengine-recording.conf
 #endif
+
+#if _WITH_PAUSE_RESUME_PROCESSOR
+BOOL g_enable_pause_resume 	= TRUE;
+int  g_ps_listening_port 	= 8082;  //  these two parameters for pause/resume processor, will be read from /etc/rtpengine/rtpengine-recording.conf
+int	 g_ps_max_clients		= 300;
+#endif 
 
 static void signals(void) {
 	sigset_t ss;
@@ -76,13 +82,19 @@ static void signals(void) {
 
 
 static void setup(void) {
+
 #if _WITH_AH_CLIENT
 	//create ahclient
 	if (g_enable_ah_client) {
 		init_ahclient(g_ah_ip, g_ah_port, g_ah_transcribe_all);
 	}
 #endif
-	
+#if _WITH_PAUSE_RESUME_PROCESSOR
+	if (g_enable_pause_resume) {
+		init_ps_processor(g_ps_listening_port, g_ps_max_clients);
+	}
+#endif
+
 	log_init("rtpengine-recording");
 	rtpe_ssl_init();
 	socket_init();
@@ -101,7 +113,6 @@ static void setup(void) {
 	metafile_setup();
 	epoll_setup();
 	inotify_setup();
-
 }
 
 
@@ -173,6 +184,7 @@ static void options(int *argc, char ***argv) {
 		{ "resample-to",	0,   0, G_OPTION_ARG_INT,	&resample_audio,"Resample all output audio",		"INT"		},
 		{ "mp3-bitrate",	0,   0, G_OPTION_ARG_INT,	&mp3_bitrate,	"Bits per second for MP3 encoding",	"INT"		},
 		{ "output-mixed",	0,   0, G_OPTION_ARG_NONE,	&output_mixed,	"Mix participating sources into a single output",NULL	},
+		{ "mix-filter",		0,   0, G_OPTION_ARG_STRING,	&mix_filter,	"Filter name and parameters used in mixing sources", "amix|amerge"	},
 		{ "output-single",	0,   0, G_OPTION_ARG_NONE,	&output_single,	"Create one output file for each source",NULL		},
 		{ "mysql-host",		0,   0,	G_OPTION_ARG_STRING,	&c_mysql_host,	"MySQL host for storage of call metadata","HOST|IP"	},
 		{ "mysql-port",		0,   0,	G_OPTION_ARG_INT,	&c_mysql_port,	"MySQL port"				,"INT"		},
@@ -187,6 +199,11 @@ static void options(int *argc, char ***argv) {
 		{ "ah_transcribe_all", 	0,   0, G_OPTION_ARG_INT,		&g_ah_transcribe_all,	"Set this flag to 1 will transcript all calls, set to 0 will lookup flag in meta data : TRANSCRIBE=yes",	"INT"		},
 		{ "ah_ip", 			0,   0, G_OPTION_ARG_STRING,	&g_ah_ip,	"The ip address of audio harvester server",	"IP"	},
 		{ "ah_port", 		0,   0, G_OPTION_ARG_INT,		&g_ah_port,	"The port number of audio harvester server",	"INT"		},
+#endif
+#if _WITH_PAUSE_RESUME_PROCESSOR
+		{ "enable_pause_resume", 	0,   0, G_OPTION_ARG_INT,		&g_enable_pause_resume,	"The global configuration to enable/disable the pause-resume processor",	"INT"		},
+		{ "ps_listening_port", 		0,   0, G_OPTION_ARG_INT,		&g_ps_listening_port,	"Recording daemon is listening on this port for pause/resume request",	"INT"		},
+		{ "ps_max_clients", 		0,   0, G_OPTION_ARG_INT,		&g_ps_max_clients,	"Max clients for pause/resume request, shoule not smaller than the max clients of this recording daemon",	"INT"		},
 #endif
 		{ NULL, }
 	};
@@ -222,6 +239,9 @@ static void options(int *argc, char ***argv) {
 		output_storage = OUTPUT_STORAGE_BOTH;
 	else
 		die("Invalid 'output-storage' option");
+
+	if ((output_storage & OUTPUT_STORAGE_FILE) && !strcmp(output_dir, spool_dir))
+		die("The spool-dir cannot be the same as the output-dir");
 }
 
 

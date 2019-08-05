@@ -12,6 +12,7 @@
 #include "packet.h"
 #include "forward.h"
 #include "ahclient/ahclient.h"
+#include "pause_resume_processor/ps_processor.h"
 
 #define MAXBUFLEN 65535
 #ifndef AV_INPUT_BUFFER_PADDING_SIZE
@@ -30,12 +31,37 @@ void stream_close(stream_t *stream) {
 	epoll_del(stream->fd);
 	close(stream->fd);
 	stream->fd = -1;
+/*
+	if (timer_fd != -1){
+		epoll_del(stream->timer_fd);
+		close(stream->timer_fd)
+		stream->timer_fd = -1;
+	}
+
+ */
 }
 
 void stream_free(stream_t *stream) {
 	g_slice_free1(sizeof(*stream), stream);
 }
 
+void process_stream(stream_t *stream, unsigned char *buf , int len ) {
+
+#if  _WITH_AH_CLIENT
+	ahclient_post_stream(stream->metafile,stream->id, buf,len);
+#endif
+	
+	if (forward_to){
+		if (forward_packet(stream->metafile,buf,len)) // leaves buf intact
+			g_atomic_int_inc(&stream->metafile->forward_failed);
+		else
+			g_atomic_int_inc(&stream->metafile->forward_count);
+	}
+	if (decoding_enabled)
+		packet_process(stream, buf, len); // consumes buf
+	else
+		free(buf);
+}
 
 static void stream_handler(handler_t *handler) {
 	stream_t *stream = handler->ptr;
@@ -60,6 +86,9 @@ static void stream_handler(handler_t *handler) {
 #if  _WITH_AH_CLIENT
 		ahclient_close_stream(stream->metafile, stream->id);
 #endif
+#if _WITH_PAUSE_RESUME_PROCESSOR
+		ps_processor_close_stream(stream);
+#endif
 		goto out;
 	}
 	else if (ret < 0) {
@@ -70,25 +99,24 @@ static void stream_handler(handler_t *handler) {
 #if  _WITH_AH_CLIENT
 		ahclient_close_stream(stream->metafile, stream->id);
 #endif
+#if _WITH_PAUSE_RESUME_PROCESSOR
+		ps_processor_close_stream(stream);
+#endif
 		goto out;
 	}
-
+	
 	// got a packet
-	pthread_mutex_unlock(&stream->lock);
+	pthread_mutex_unlock(&stream->lock);	
 
-#if  _WITH_AH_CLIENT
-	ahclient_post_stream(stream->metafile,stream->id, buf,ret);
-#endif
-	if (forward_to){
-		if (forward_packet(stream->metafile,buf,ret)) // leaves buf intact
-			g_atomic_int_inc(&stream->metafile->forward_failed);
-		else
-			g_atomic_int_inc(&stream->metafile->forward_count);
-	}
-	if (decoding_enabled)
-		packet_process(stream, buf, ret); // consumes buf
-	else
+#if _WITH_PAUSE_RESUME_PROCESSOR
+	if (  ps_processor_process_stream(stream, buf, ret)) {
+		// if pause_resume_processor has already process this packet, free buf and do nothing here
 		free(buf);
+	}  else 
+		// old codes moved into the following function 
+#endif
+		process_stream(stream, buf, ret);
+	
 
 	log_info_call = NULL;
 	log_info_stream = NULL;
@@ -121,7 +149,53 @@ static stream_t *stream_get(metafile_t *mf, unsigned long id) {
 out:
 	return ret;
 }
+/* 
+static void stream_timer_handler(handler_t *handler) {
+    uint64_t exp = 0;
+    stream_t *stream = handler->ptr;
+    read(fd, &exp, sizeof(uint64_t)); 
+}
 
+#define CHECK_MASK_BEEP_INTERVAL 1
+int timerfd_init(stream_t *stream)
+{
+	stream->timer_fd = -1;
+
+    int tmfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+    if (tmfd < 0) {
+        ilog(LOG_ERR, "timerfd_create error, Error:[%d:%s]", errno, strerror(errno));
+        return -1;
+    }
+	
+	struct timespec now;
+	if(clock_gettime(CLOCK_MONOTONIC,&now) != 0){
+		ilog(LOG_ERR, "clock_gettime() error");
+		return -1;
+	}
+	struct itimerspec its;
+	its->it_value.tv_sec = now.tv_sec + CHECK_MASK_BEEP_INTERVAL;
+	its->it_value.tv_nsec = 0;
+	its->it_interval.tv_sec = CHECK_MASK_BEEP_INTERVAL;
+	its->it_interval.tv_nsec = 0;
+
+    int ret = timerfd_settime(tmfd, 0, &its, NULL);
+    if (ret < 0) {
+        ilog(LOG_ERR, "timerfd_settime error, Error:[%d:%s]", errno, strerror(errno));
+        close(tmfd);
+        return -1;
+    }
+
+	stream->timer_handler.ptr = stream;
+	stream->timer_handler.func = stream_timer_handler;
+	if (epoll_add(stream->timer_fd, EPOLLIN, &stream->timer_handler)) {
+        ilog(LOG_ERR, "epoll_add error, Error:[%d:%s]", errno, strerror(errno));		
+		close(tmfd);
+		return -1;
+	}
+	stream->timer_fd = tmfd;
+    return 0;
+}
+*/
 
 // mf is locked
 void stream_open(metafile_t *mf, unsigned long id, char *name) {
@@ -144,6 +218,9 @@ void stream_open(metafile_t *mf, unsigned long id, char *name) {
 	stream->handler.ptr = stream;
 	stream->handler.func = stream_handler;
 	epoll_add(stream->fd, EPOLLIN, &stream->handler);
+
+	// init timer
+	// timerfd_init(stream); 
 }
 
 void stream_details(metafile_t *mf, unsigned long id, unsigned int tag) {
