@@ -42,13 +42,14 @@ tcp_command_id_t check_command(char * buf, char ** arg) {
         buf ++;
     }
 
-    for (; i < sizeof(ps_tcp_commands); ++ i) {
-        if (strncmp(buf, ps_tcp_commands[i].command_str, strlen(ps_tcp_commands[i].command_str)) == 0) {
+    for (; i < UNDEFINED_COMMAND ; ++i) {
+        if (strlen(buf) >= strlen(ps_tcp_commands[i].command_str) && 
+            strncmp(buf, ps_tcp_commands[i].command_str, strlen(ps_tcp_commands[i].command_str)) == 0) {
             break; 
         }
     }
 
-    if (i == sizeof(ps_tcp_commands)) { 
+    if (i == UNDEFINED_COMMAND) { 
         if (arg) *arg = NULL;
         return UNDEFINED_COMMAND;
     } 
@@ -73,11 +74,13 @@ tcp_command_id_t check_command(char * buf, char ** arg) {
 
 
 void process_client(handler_t *handler){
+
     tcpclient_t* pClient = handler->ptr;
     if (pClient == NULL)
         return;
     char buf[2048];
     int rc = read(pClient->fd, buf, sizeof(buf));
+
     if (rc == 0){
         close_client(pClient);
         return;
@@ -90,7 +93,7 @@ void process_client(handler_t *handler){
     char * arg = NULL;
 
     int command = check_command(buf, &arg);
-    ilog(LOG_ERR, "tcpserver got command %s : args : %s ", command == UNDEFINED_COMMAND ? "UNDEFINED_COMMAND" :  ps_tcp_commands[command].command_str ,
+    ilog(LOG_INFO, "tcpserver got command %s : args : %s ", command == UNDEFINED_COMMAND ? "UNDEFINED_COMMAND" :  ps_tcp_commands[command].command_str ,
                                                             arg == NULL ? "NULL" : arg); 
 
     switch (command)

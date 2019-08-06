@@ -10,7 +10,7 @@ typedef enum tcp_command_id {
   STOP_RECORDING = 0,
   START_RECORDING = 1,
   HEALTH_CHECK = 2,
-  UNDEFINED_COMMAND 
+  UNDEFINED_COMMAND = 3
 } tcp_command_id_t;
 
 typedef struct ps_tcp_command {
