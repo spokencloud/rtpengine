@@ -126,9 +126,7 @@ tcpclient_t * assign_client(int client_fd) {
     return NULL;
 }
 /* accept a new client connection to the listening socket */
-void accept_client(void * arg){
-
-    tcpserver_t *pServer = (tcpserver_t *)arg;
+void accept_client(handler_t *handler){
 
     int fd;
     struct sockaddr_in in;
@@ -213,7 +211,7 @@ BOOL tcpserver_setup(int listen_port, int max_clients) {
     }
     */
 
-    if (listen(fd, max_clients) == -1) {
+    if (listen(fd,1) == -1) {
        ilog(LOG_ERR, "listen: %s\n", strerror(errno));
         goto failed;
     }
@@ -229,8 +227,8 @@ BOOL tcpserver_setup(int listen_port, int max_clients) {
          
     free(tcpserver.clients);
     tcpserver.clients = NULL;
-    close(fd);
     tcpserver.fd = INVALID_FD;
+    close(fd);
     return FALSE;
 }
 

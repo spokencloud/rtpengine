@@ -89,12 +89,6 @@ static void setup(void) {
 		init_ahclient(g_ah_ip, g_ah_port, g_ah_transcribe_all);
 	}
 #endif
-#if _WITH_PAUSE_RESUME_PROCESSOR
-	if (g_enable_pause_resume) {
-		init_ps_processor(g_ps_listening_port, g_ps_max_clients);
-	}
-#endif
-
 	log_init("rtpengine-recording");
 	rtpe_ssl_init();
 	socket_init();
@@ -112,6 +106,12 @@ static void setup(void) {
 	signals();
 	metafile_setup();
 	epoll_setup();
+
+#if _WITH_PAUSE_RESUME_PROCESSOR
+	if (g_enable_pause_resume) {
+		init_ps_processor(g_ps_listening_port, g_ps_max_clients);
+	}
+#endif
 	inotify_setup();
 }
 
@@ -162,7 +162,9 @@ static void cleanup(void) {
 #if _WITH_AH_CLIENT
 	destroy_ahclient();
 #endif
-	
+#if _WITH_PAUSE_RESUME_PROCESSOR
+	destroy_ps_processor();
+#endif
 	garbage_collect_all();
 	metafile_cleanup();
 	inotify_cleanup();
