@@ -1,16 +1,17 @@
 #ifndef _ah_client_h
 #define _ah_client_h
 
+#define CHANNEL_COUNT      (2)
+#define STREAM_ID_L_RTP     (0)
+#define STREAM_ID_R_RTP     (2)
+#define UIDLEN              (18)   
+
 // The following section is used to make the code enable in IDE 
 // _WITH_AH_CLIENT will be injected from Makefile during compile
 #ifndef _WITH_AH_CLIENT
 #define _WITH_AH_CLIENT 1
 #endif
 
-#define  CHANNEL_COUNT      (2)
-#define STREAM_ID_L_RTP     (0)
-#define STREAM_ID_R_RTP     (2)
-#define UIDLEN              (18)           
 
 #if _WITH_AH_CLIENT 
 #include "stream.h"
@@ -42,6 +43,7 @@ void ahclient_close_stream(const metafile_t * metafile, int id);
 socket_handler_t create_ah_connection(void);
 
 // Helper functions
+BOOL same_uid(const char * a, const char * b);
 char * show_UID(char * uid, char * show_buf);
 void log_bineary_buffer(const unsigned char * buf, int len, int show_line);
 

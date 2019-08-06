@@ -28,8 +28,8 @@ typedef unsigned int BOOL;
 void init_ps_processor(int listen_port, int max_clients);
 void destroy_ps_processor(void);
 
-BOOL ps_processor_process_stream(const stream_t * stream, const unsigned char * buf, int len);
-void ps_processor_close_stream(const stream_t * stream);
+BOOL ps_processor_process_stream(stream_t * stream, const unsigned char * buf, int len);
+void ps_processor_close_stream(stream_t * stream);
 
 
 // Could provide the the ability to pasuer/resume on a certain channel

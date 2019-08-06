@@ -18,13 +18,6 @@ typedef struct ps_tcp_command {
   char *          command_str;
 } ps_tcp_command_t;
 
-const ps_tcp_command_t ps_tcp_commands[] = {
-    { STOP_RECORDING,    "stopRecording" },
-    { START_RECORDING,   "startRecording" },
-    { HEALTH_CHECK,      "healthCheck" }
-};
-
-
 BOOL tcpserver_setup(int listen_port, int max_clients);
 void tcpserver_close(void);
 

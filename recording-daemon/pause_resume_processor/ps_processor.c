@@ -4,8 +4,9 @@
 #if _WITH_PAUSE_RESUME_PROCESSOR
 #include "stream_tracker.h"
 #include <pthread.h>
-#include "ahclient/ahclient.h"
 #include "tcpserver.h"
+#include "log.h"
+#include "ahclient/ahclient.h"
 
 typedef struct stream_tracking_node 
 {
@@ -98,8 +99,11 @@ void destroy_ps_processor(void) {
 // notify processor that a new packet is coming
 // return true is this packet (with the same time stamp) has already been processed by pause - resume processor
 **************************/
-BOOL ps_processor_process_stream(const stream_t * stream, const unsigned char * buf, int len){
+BOOL ps_processor_process_stream(stream_t * stream, const unsigned char * buf, int len){
     if (ps_processor_instance ) {
+        
+        if (stream->id != STREAM_ID_L_RTP && stream->id != STREAM_ID_R_RTP) return FALSE;
+
         pthread_mutex_lock(&ps_processor_instance->processor_mutex);
         stream_tracking_node_t * node = find_stream_tracker_node(stream, TRUE, NULL);
         pthread_mutex_unlock(&ps_processor_instance->processor_mutex);
@@ -111,10 +115,11 @@ BOOL ps_processor_process_stream(const stream_t * stream, const unsigned char * 
     return FALSE;
 }
 
-void ps_processor_close_stream(const stream_t * stream){
+void ps_processor_close_stream(stream_t * stream){
     if (ps_processor_instance ) {
+        if (stream->id != STREAM_ID_L_RTP && stream->id != STREAM_ID_R_RTP) return;
+
         stream_tracking_node_t * pre_node = NULL;
-        
         pthread_mutex_lock(&ps_processor_instance->processor_mutex);
 
         stream_tracking_node_t * node = find_stream_tracker_node(stream, FALSE, &pre_node);
@@ -133,10 +138,6 @@ void ps_processor_close_stream(const stream_t * stream){
     }
 }
 
-BOOL call_id_matched(char * stream_call_id, char * call_id) {
-    return FALSE;
-}
-
 BOOL stream_id_match_channel_id(unsigned long stream_id, channel_id_t id ) {
     if (id == ALL_CHANNELS) return TRUE;
     if (stream_id == STREAM_ID_L_RTP && id == LEFT_CHANNEL) return TRUE;
@@ -150,7 +151,8 @@ int find_macthed_node(char * call_id, channel_id_t id , stream_tracking_node_t *
     pthread_mutex_lock(&ps_processor_instance->processor_mutex);
     stream_tracking_node_t * node = ps_processor_instance->tracker_node_head;
     while (node) {
-        if (call_id_matched(node->tracker->stream->metafile->call_id, call_id) && stream_id_match_channel_id(node->tracker->stream->id, id)) {
+
+        if (same_uid(node->tracker->stream->metafile->call_id, call_id) && stream_id_match_channel_id(node->tracker->stream->id, id)) {
             matched[c] = node;
             c++;
             if (id != ALL_CHANNELS || c >= CHANNEL_COUNT ) break;

@@ -7,6 +7,12 @@ typedef struct tcpclient_s {
     handler_t handler;
 } tcpclient_t;
 
+const ps_tcp_command_t ps_tcp_commands[] = {
+    { STOP_RECORDING,    "stopRecording" },
+    { START_RECORDING,   "startRecording" },
+    { HEALTH_CHECK,      "healthCheck" }
+};
+
 #define INVALID_FD  (-1)
 
 typedef struct tcpserver_s {
@@ -93,7 +99,7 @@ void process_client(handler_t *handler){
     char * arg = NULL;
 
     int command = check_command(buf, &arg);
-    ilog(LOG_INFO, "tcpserver got command %s : args : %s ", command == UNDEFINED_COMMAND ? "UNDEFINED_COMMAND" :  ps_tcp_commands[command].command_str ,
+    ilog(LOG_INFO, "[%s] ===> tcpserver got command %s : args : %s ", buf, command == UNDEFINED_COMMAND ? "UNDEFINED_COMMAND" :  ps_tcp_commands[command].command_str ,
                                                             arg == NULL ? "NULL" : arg); 
 
     switch (command)
