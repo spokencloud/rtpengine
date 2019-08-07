@@ -1,4 +1,7 @@
 #include "tcpserver.h"
+
+#if _WITH_PAUSE_RESUME_PROCESSOR
+
 #include "log.h"
 #include "epoll.h"
 
@@ -250,5 +253,4 @@ void tcpserver_close(void){
         close(tcpserver.fd); 
     }   
 }
-
-
+#endif

@@ -10,7 +10,7 @@ typedef struct stream_header {
 
     unsigned char leading[30];
     unsigned char sequence_number[2];   // BIG_ENDIAN in the packet, use get_sn() and fill_sn() to transfer to/from uint
-    unsigned char timestamp[6];         // BIG_ENDIAN in the packet, use get_ts() and fill_ts() to transfer to/from uint
+    unsigned char timestamp[4];         // BIG_ENDIAN in the packet, use get_ts() and fill_ts() to transfer to/from uint
     unsigned char ending[4];
 } stream_header_t;
 
