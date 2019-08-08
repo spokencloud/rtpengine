@@ -186,7 +186,6 @@ static void options(int *argc, char ***argv) {
 		{ "resample-to",	0,   0, G_OPTION_ARG_INT,	&resample_audio,"Resample all output audio",		"INT"		},
 		{ "mp3-bitrate",	0,   0, G_OPTION_ARG_INT,	&mp3_bitrate,	"Bits per second for MP3 encoding",	"INT"		},
 		{ "output-mixed",	0,   0, G_OPTION_ARG_NONE,	&output_mixed,	"Mix participating sources into a single output",NULL	},
-		//{ "mix-filter",		0,   0, G_OPTION_ARG_STRING,	&mix_filter,	"Filter name and parameters used in mixing sources", "amix|amerge"	},
 		{ "output-single",	0,   0, G_OPTION_ARG_NONE,	&output_single,	"Create one output file for each source",NULL		},
 		{ "mysql-host",		0,   0,	G_OPTION_ARG_STRING,	&c_mysql_host,	"MySQL host for storage of call metadata","HOST|IP"	},
 		{ "mysql-port",		0,   0,	G_OPTION_ARG_INT,	&c_mysql_port,	"MySQL port"				,"INT"		},
@@ -242,8 +241,6 @@ static void options(int *argc, char ***argv) {
 	else
 		die("Invalid 'output-storage' option");
 
-	if ((output_storage & OUTPUT_STORAGE_FILE) && !strcmp(output_dir, spool_dir))
-		die("The spool-dir cannot be the same as the output-dir");
 }
 
 

@@ -105,27 +105,23 @@ BOOL track_stream(stream_tracker_t * tracker, stream_t  * stream, const unsigned
             // in paused state, the stream should be handled by beep_sending_thread()
             ret = TRUE;
         } else {
+
             if (tracker->timestamp == 0) { // uninitialized
                 memcpy(&(tracker->stream_header), header, STREAM_HEADER_SIZE); 
                 tracker->timestamp = header_ts; 
                 tracker->sequence_number = header_sn; 
-            } else  {
-                if (header_sn <= tracker->sequence_number || header_ts <= tracker->timestamp) {
-                    ret =  TRUE; // same packet already sent
-                } else {
-                    if (tracker->delta_ts == 0 ) {      // init the delta time of two packets
-                        tracker->delta_ts   = ( header_ts - tracker->timestamp ) / (header_sn - tracker->sequence_number);
-                        tracker->delta_time_ms = tracker->delta_ts * 1000 / SAMPLE_RATE;
-                        tracker->pack_size = STREAM_HEADER_SIZE + tracker->delta_ts;  // 8 bits deep signal, each TS requires one byte sampling
-                                
-                        ilog(LOG_INFO, "Init delta_ts: %d (%dms) packet size %d", tracker->delta_ts, tracker->delta_time_ms, tracker->pack_size);
-
-                    } 
-                    // update the timestamp and SN
-                    tracker->timestamp = header_ts;
-                    tracker->sequence_number = header_sn;
-                }
+            } else  if (tracker->delta_ts == 0 && header_sn > tracker->sequence_number && header_ts  > tracker->timestamp) {      // init the delta time of two packets
+                tracker->delta_ts   = ( header_ts - tracker->timestamp ) / (header_sn - tracker->sequence_number);
+                tracker->delta_time_ms = tracker->delta_ts * 1000 / SAMPLE_RATE;
+                tracker->pack_size = STREAM_HEADER_SIZE + tracker->delta_ts;  // 8 bits deep signal, each TS requires one byte sampling
+                        
+                ilog(LOG_INFO, "Init delta_ts: %d (%dms) packet size %d on ts: %u sn: %u", tracker->delta_ts, tracker->delta_time_ms,
+                    tracker->pack_size, tracker->timestamp, tracker->sequence_number);
             }
+
+            // update the timestamp and SN
+            tracker->timestamp = header_ts;
+            tracker->sequence_number = header_sn;       
         }
         pthread_mutex_unlock(& tracker->tracker_pack_mutex);
     }
@@ -164,7 +160,6 @@ void * beep_sending_thread(void * arg) {
         } else {
             // gen new pack and sent
             unsigned char * buf = malloc(tracker->pack_size);
-
             memcpy(buf,&(tracker->stream_header), STREAM_HEADER_SIZE);
             int raw_data_size = tracker->pack_size - STREAM_HEADER_SIZE;
             // here the logic didn't handle the case if raw_data_size is bigger than MASK_BEEP_LENGTH 

@@ -19,7 +19,6 @@ typedef struct ps_processor {
     stream_tracking_node_t  * tracker_node_head;
 }  ps_procesor_t;
 
-
 // a global sigleton pause resume processor 
 ps_procesor_t * ps_processor_instance = NULL;
 
@@ -39,6 +38,16 @@ void delete_stream_tracking_node(stream_tracking_node_t * node, BOOL recursive) 
         }
         free(node);
     }
+}
+stream_tracking_node_t *  find_stream_tracker_node_by_uid_id( char * uid, unsigned long id) {
+    stream_tracking_node_t * node = ps_processor_instance->tracker_node_head;
+    while (node) {
+        if (  same_uid ( uid, node->tracker->stream->metafile->call_id) && id == node->tracker->stream->id) {
+            break;
+        }
+        node = node->next;
+    }
+    return node;
 }
 
 stream_tracking_node_t * find_stream_tracker_node(const stream_t * stream, BOOL create, stream_tracking_node_t ** pre_node) {
@@ -100,21 +109,33 @@ void destroy_ps_processor(void) {
 // return true is this packet (with the same time stamp) has already been processed by pause - resume processor
 **************************/
 BOOL ps_processor_process_stream(stream_t * stream, const unsigned char * buf, int len){
+    
+    BOOL ret = FALSE;
     if (ps_processor_instance ) {
-        
-        if (stream->id != STREAM_ID_L_RTP && stream->id != STREAM_ID_R_RTP) return FALSE;
 
-        pthread_mutex_lock(&ps_processor_instance->processor_mutex);
-        stream_tracking_node_t * node = find_stream_tracker_node(stream, TRUE, NULL);
-        pthread_mutex_unlock(&ps_processor_instance->processor_mutex);
+        if (stream->id == STREAM_ID_L_RTP || stream->id == STREAM_ID_R_RTP)  {  // RTP
 
-        if (node) {
-            return track_stream(node->tracker, stream, buf, len);
+            pthread_mutex_lock(&ps_processor_instance->processor_mutex);
+            stream_tracking_node_t * node = find_stream_tracker_node(stream, TRUE, NULL);
+            pthread_mutex_unlock(&ps_processor_instance->processor_mutex);
+
+            if (node) {
+                ret =  track_stream(node->tracker, stream, buf, len);
+            }
+        }  else if (stream->id == STREAM_ID_L_RTCP || stream->id == STREAM_ID_R_RTCP)  {  // RTCP should ignore if the corresponding stream is paused
+            unsigned long  id = stream->id - 1; 
+            pthread_mutex_lock(&ps_processor_instance->processor_mutex);
+            stream_tracking_node_t * node = find_stream_tracker_node_by_uid_id(stream->metafile->call_id, id);
+            if (node && node->tracker->is_paused)  ret = TRUE;   // ignore this RTCP
+            pthread_mutex_unlock(&ps_processor_instance->processor_mutex);
         }
     }
-    return FALSE;
+    return ret;
 }
-
+/**************************
+// notify processor to stop tracking this stream
+// 
+**************************/
 void ps_processor_close_stream(stream_t * stream){
     if (ps_processor_instance ) {
         if (stream->id != STREAM_ID_L_RTP && stream->id != STREAM_ID_R_RTP) return;

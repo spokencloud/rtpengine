@@ -3,7 +3,9 @@
 
 #define CHANNEL_COUNT      (2)
 #define STREAM_ID_L_RTP     (0)
+#define STREAM_ID_L_RTCP     (1)
 #define STREAM_ID_R_RTP     (2)
+#define STREAM_ID_R_RTCP     (3)
 #define UIDLEN              (18)   
 
 // The following section is used to make the code enable in IDE 
