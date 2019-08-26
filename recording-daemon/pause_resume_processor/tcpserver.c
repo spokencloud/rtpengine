@@ -10,10 +10,14 @@ typedef struct tcpclient_s {
     handler_t handler;
 } tcpclient_t;
 
+#define MAX_ARG_NUMBER 16
+#define MAX_COMMAND_LENGTH 2048
+
 const ps_tcp_command_t ps_tcp_commands[] = {
     { STOP_RECORDING,    "stopRecording" },
     { START_RECORDING,   "startRecording" },
-    { HEALTH_CHECK,      "healthCheck" }
+    { HEALTH_CHECK,      "healthCheck" },
+    { UNDEFINED_COMMAND, NULL}
 };
 
 #define INVALID_FD  (-1)
@@ -43,42 +47,38 @@ void close_client(tcpclient_t* pClient){
 }
 
 
-tcp_command_id_t check_command(char * buf, char ** arg) {
-
+tcp_command_id_t check_command(char * buf, int len, int* pargc, char ** argv) {
+    int argc = 0;
     int i = 0;
-    // trim leading space
-    while ( *buf == ' ' ) {
-        buf ++;
-    }
+    int new_flag = 1;
 
-    for (; i < UNDEFINED_COMMAND ; ++i) {
-        if (strlen(buf) >= strlen(ps_tcp_commands[i].command_str) && 
-            strncmp(buf, ps_tcp_commands[i].command_str, strlen(ps_tcp_commands[i].command_str)) == 0) {
-            break; 
-        }
-    }
+    if (len == MAX_COMMAND_LENGTH)
+        len--;
 
-    if (i == UNDEFINED_COMMAND) { 
-        if (arg) *arg = NULL;
-        return UNDEFINED_COMMAND;
-    } 
-    
-    if (arg) {
-        // find the command argument
-        buf += strlen(ps_tcp_commands[i].command_str);
-        // trim off leading space
-        while ( *buf == ' ' ) {
-            buf++;
+    for (i = 0; i < len; i++){
+        if (isspace(buf[i])){
+            if (!new_flag) {
+                buf[i] = '\0';
+                new_flag = 1;
+            }
         }
-        if ( *buf == '\0') {
-            // without argument
-            *arg = NULL;
-        } else {
-            *arg = buf;
+        else{
+            if (new_flag){
+                if (argc < MAX_ARG_NUMBER)
+                    argv[argc++] = buf+i;
+                new_flag = 0;
+            }
         }
     }
-    
-    return ps_tcp_commands[i].command_id;
+    buf[len] = '\0';
+
+    *pargc = argc;
+    for (i = 0; ps_tcp_commands[i].command_id != UNDEFINED_COMMAND ; ++i) {
+        if (strcmp(argv[0], ps_tcp_commands[i].command_str) == 0) {
+            return ps_tcp_commands[i].command_id; 
+        }
+    }
+    return UNDEFINED_COMMAND;
 }
 
 
@@ -99,21 +99,30 @@ void process_client(handler_t *handler){
         return;
     }
 
-    char * arg = NULL;
-
-    int command = check_command(buf, &arg);
-    ilog(LOG_INFO, "[%s] ===> tcpserver got command %s : args : %s ", buf, command == UNDEFINED_COMMAND ? "UNDEFINED_COMMAND" :  ps_tcp_commands[command].command_str ,
-                                                            arg == NULL ? "NULL" : arg); 
+    int argc = 0;
+    char *argv[MAX_ARG_NUMBER];
+ 
+    ilog(LOG_INFO, "===> tcpserver got command [%s] ", buf);
+    int command = check_command(buf, rc, &argc, argv);
 
     switch (command)
     {
         case STOP_RECORDING:
-            dbg("====> stopRecording command: %s", buf);
-            pause_stream( arg, ALL_CHANNELS);
+            if (argc < 2)
+                ilog(LOG_ERR, "====> stopRecording command: Missing call id");
+            else {             
+                dbg("====> stopRecording command: [%s %s]\n", argv[0], argv[1]);
+                pause_stream( argv[1], ALL_CHANNELS);
+            }
             break;
         case START_RECORDING:
-            dbg("====> startRecording command: %s", buf);
-            resume_stream( arg, ALL_CHANNELS);
+            if (argc < 2)
+                ilog(LOG_ERR, "====> startRecording command: Missing call id");
+            else {             
+                dbg("====> startRecording command: [%s %s]\n", argv[0], argv[1]);
+                resume_stream( argv[1], ALL_CHANNELS);
+            }
+           
             break;
         case HEALTH_CHECK:
             dbg("====> healthCheck command: %s", buf);
