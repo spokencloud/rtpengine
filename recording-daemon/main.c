@@ -36,7 +36,7 @@ const char *spool_dir = "/var/spool/rtpengine";
 const char *output_dir = "/var/lib/rtpengine-recording";
 static const char *output_format = "wav";
 int output_mixed;
-//const char *mix_filter = "amix";
+const char *mix_filter = "amix";
 int output_single;
 int output_enabled = 1;
 int decoding_enabled;
