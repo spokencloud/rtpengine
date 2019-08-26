@@ -24,6 +24,11 @@
 static pthread_mutex_t metafiles_lock = PTHREAD_MUTEX_INITIALIZER;
 static GHashTable *metafiles;
 
+static long get_current_milliseconds(){
+	struct timeval tp;
+	gettimeofday(&tp, NULL);
+	return tp.tv_sec * 1000 + tp.tv_usec / 1000;
+}
 
 static void meta_free(void *ptr) {
 	metafile_t *mf = ptr;
@@ -407,11 +412,11 @@ static void metafile_timer_handler(handler_t *handler) {
     uint64_t exp = 0;
     metafile_t *mf = handler->ptr;
     read(mf->timer_fd, &exp, sizeof(uint64_t)); 
-	time_t now = time(NULL);
+	long now = get_current_milliseconds();
 	metafile_traverse_decoders(mf, decoder_insert_mask_beep, now - mf->pause_start_time);
 }
 
-#define CHECK_MASK_BEEP_INTERVAL 1
+#define CHECK_MASK_BEEP_INTERVAL 500  // miliseconds
 int timerfd_init(metafile_t *mf)
 {
 	if (mf->timer_fd != -1)
@@ -424,10 +429,10 @@ int timerfd_init(metafile_t *mf)
     }
 	
 	struct itimerspec its;
-	its.it_value.tv_sec = CHECK_MASK_BEEP_INTERVAL;
-	its.it_value.tv_nsec = 0;
-	its.it_interval.tv_sec = CHECK_MASK_BEEP_INTERVAL;
-	its.it_interval.tv_nsec = 0;
+	its.it_value.tv_sec = CHECK_MASK_BEEP_INTERVAL/1000;
+	its.it_value.tv_nsec = CHECK_MASK_BEEP_INTERVAL%1000 * 1000;
+	its.it_interval.tv_sec = its.it_value.tv_sec;
+	its.it_interval.tv_nsec = its.it_value.tv_nsec;
 
     int ret = timerfd_settime(tmfd, 0, &its, NULL);
     if (ret < 0) {
@@ -467,7 +472,7 @@ int metafile_stop_recording(char *call_id){
 		return -1;
 	}
 	timerfd_init(mf);
-	mf->pause_start_time = time(NULL);
+	mf->pause_start_time = get_current_milliseconds();
 
 	metafile_traverse_decoders(mf, decoder_start_mask_beep, 0);
 	pthread_mutex_unlock(&mf->lock);
