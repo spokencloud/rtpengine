@@ -181,7 +181,8 @@ mix_t *mix_new() {
 
 
 static void mix_silence_fill_idx_upto(mix_t *mix, unsigned int idx, uint64_t upto) {
-	unsigned int silence_samples = mix->input_format.clockrate / 100;
+	//unsigned int silence_samples = mix->input_format.clockrate / 100;
+	unsigned int silence_samples = 20 * mix->input_format.clockrate / 1000;
 
 	while (mix->in_pts[idx] < upto) {
 		if (G_UNLIKELY(upto - mix->in_pts[idx] > mix->input_format.clockrate * 30)) {
@@ -258,7 +259,7 @@ int mix_add(mix_t *mix, AVFrame *frame, unsigned int idx, output_t *output) {
 	frame->pts += mix->pts_offs[idx];
 
 	// fill missing time
-	mix_silence_fill_idx_upto(mix, idx, frame->pts);
+	//mix_silence_fill_idx_upto(mix, idx, frame->pts);
 
 	uint64_t next_pts = frame->pts + frame->nb_samples;
 
@@ -274,7 +275,7 @@ int mix_add(mix_t *mix, AVFrame *frame, unsigned int idx, output_t *output) {
 
 	av_frame_free(&frame);
 
-	mix_silence_fill(mix);
+	//mix_silence_fill(mix);
 
 	while (1) {
 		int ret = av_buffersink_get_frame(mix->sink_ctx, mix->sink_frame);
