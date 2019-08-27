@@ -142,6 +142,7 @@ struct metafile_s {
 	int timer_fd;
 	handler_t timer_handler;
 	long pause_start_time;
+	long last_mask_pts;
 };
 
 

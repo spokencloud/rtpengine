@@ -20,6 +20,7 @@
 #include "tag.h"
 #include "decoder.h"
 #include "epoll.h"
+#include "maskbeep.h"
 
 static pthread_mutex_t metafiles_lock = PTHREAD_MUTEX_INITIALIZER;
 static GHashTable *metafiles;
@@ -394,18 +395,51 @@ void metafile_cleanup(void) {
 	g_hash_table_destroy(metafiles);
 }
 
-static void metafile_traverse_decoders(metafile_t *mf, decoder_visitor_t visitor_fun, time_t timediff) {
+static void metafile_traverse_decoders(metafile_t *mf, decoder_visitor_t visitor_fun, long timediff, void* extra) {
 	GList *ssrclist = g_hash_table_get_values(mf->ssrc_hash);
 	for (GList *l = ssrclist; l; l = l->next) {
 		ssrc_t *ssrc = l->data;
 		if (ssrc != NULL){
 			for (int j=0; j<128; j++){
 				if (ssrc->decoders[j] != NULL){
-					(*visitor_fun)(ssrc->decoders[j], ssrc, timediff);
+					(*visitor_fun)(ssrc->decoders[j], ssrc, timediff, extra);
 				}
 			}
 		}
 	}
+}
+
+const unsigned char* fill_mask_data(unsigned char* mask_data, int len, const unsigned char * pMask);
+static void insert_mask_beep(metafile_t *mf, long timediff) {
+	int nb_samples = 160;
+	int clockrate = 8000; // dec->in_format.clockrate
+	uint64_t target_pts = timediff * (clockrate / 1000);
+	int offset_mask_beep = mf->last_mask_pts % MASK_BEEP_LENGTH;
+	int shift_ts = target_pts - mf->last_mask_pts;
+	//int pkt_num = (target_pts - dec->pts) / nb_samples;
+
+	dbg("====> metafile_insert_mask_beep: timediff=%lu,  target_pts=%llu, start_pos=%llu, shift_ts=%d",
+	  timediff, 
+	  (long long unsigned int)target_pts, 
+	  (long long unsigned int)offset_mask_beep,
+	  shift_ts);
+	unsigned char mask_data[nb_samples];
+	int len = nb_samples;
+	const unsigned char* pMask = maskbeep + offset_mask_beep;
+	dbg("====> total len = %d", shift_ts);
+	while (shift_ts > 0){
+		if (shift_ts<len)
+			len = shift_ts;
+		dbg("====> insert maskbeep[%d:%d]", (int)(pMask - maskbeep), len);
+		pMask = fill_mask_data(mask_data, len, pMask);
+		str pMaskData;
+		pMaskData.s = (char*)mask_data;
+		pMaskData.len = len;
+		metafile_traverse_decoders(mf, decoder_insert_mask_beep_packet, (long)target_pts, &pMaskData);
+		shift_ts -= len;
+		usleep(1000);
+	}	
+	mf->last_mask_pts = target_pts;
 }
 
 static void metafile_timer_handler(handler_t *handler) {
@@ -413,10 +447,11 @@ static void metafile_timer_handler(handler_t *handler) {
     metafile_t *mf = handler->ptr;
     read(mf->timer_fd, &exp, sizeof(uint64_t)); 
 	long now = get_current_milliseconds();
-	metafile_traverse_decoders(mf, decoder_insert_mask_beep, now - mf->pause_start_time);
+	//metafile_traverse_decoders(mf, decoder_insert_mask_beep, now - mf->pause_start_time);
+	insert_mask_beep(mf, now - mf->pause_start_time);
 }
 
-#define CHECK_MASK_BEEP_INTERVAL 500  // miliseconds
+#define CHECK_MASK_BEEP_INTERVAL 200  // miliseconds
 int timerfd_init(metafile_t *mf)
 {
 	if (mf->timer_fd != -1)
@@ -430,7 +465,7 @@ int timerfd_init(metafile_t *mf)
 	
 	struct itimerspec its;
 	its.it_value.tv_sec = CHECK_MASK_BEEP_INTERVAL/1000;
-	its.it_value.tv_nsec = CHECK_MASK_BEEP_INTERVAL%1000 * 1000;
+	its.it_value.tv_nsec = CHECK_MASK_BEEP_INTERVAL%1000 * 1000000;
 	its.it_interval.tv_sec = its.it_value.tv_sec;
 	its.it_interval.tv_nsec = its.it_value.tv_nsec;
 
@@ -464,6 +499,29 @@ int timerfd_destroy(metafile_t *mf)
 	return 0;
 }
 
+
+// only insert mask_beep when the time of a pause is greater than PAUSE_RECORDING_THRESHOLD
+#define PAUSE_RECORDING_THRESHOLD 1000	
+
+const unsigned char* fill_mask_data(unsigned char* mask_data, int len, const unsigned char * pMask){
+	if (pMaskBeepEnd - pMask >= len)
+	{
+		memcpy(mask_data, pMask, len);
+		pMask += len;
+		if (pMask == pMaskBeepEnd)
+			pMask = maskbeep;
+	}
+	else{
+		int firstPartLen = pMaskBeepEnd - pMask;
+		memcpy(mask_data, pMask, firstPartLen);
+		int secondPartLen = len - firstPartLen;
+		pMask = maskbeep;
+		memcpy(mask_data + firstPartLen, pMask, secondPartLen);
+		pMask += secondPartLen;
+	}
+	return pMask;
+}
+
 int metafile_stop_recording(char *call_id){
 	metafile_t *mf = metafile_get_by_call_id(call_id);
 	if (mf == NULL){
@@ -473,8 +531,9 @@ int metafile_stop_recording(char *call_id){
 	}
 	timerfd_init(mf);
 	mf->pause_start_time = get_current_milliseconds();
+	mf->last_mask_pts = 0;
 
-	metafile_traverse_decoders(mf, decoder_start_mask_beep, 0);
+	metafile_traverse_decoders(mf, decoder_start_mask_beep, 0, NULL);
 	pthread_mutex_unlock(&mf->lock);
 	return 0;
 }
@@ -489,7 +548,7 @@ int metafile_start_recording(char *call_id){
 	timerfd_destroy(mf);
 	mf->pause_start_time = -1;
 
-	metafile_traverse_decoders(mf, decoder_stop_mask_beep, 0);
+	metafile_traverse_decoders(mf, decoder_stop_mask_beep, 0, NULL);
 	pthread_mutex_unlock(&mf->lock);
 	return 0;
 }

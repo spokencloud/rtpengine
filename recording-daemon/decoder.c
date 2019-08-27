@@ -18,7 +18,7 @@
 #include "streambuf.h"
 #include "main.h"
 #include "packet.h"
-#include "maskbeep.h"
+
 
 
 int resample_audio;
@@ -178,27 +178,6 @@ err:
 	return -1;
 }
 
-// only insert mask_beep when the time of a pause is greater than PAUSE_RECORDING_THRESHOLD
-#define PAUSE_RECORDING_THRESHOLD 1000	
-
-const unsigned char* fill_mask_data(unsigned char* mask_data, int len, const unsigned char * pMask){
-	if (pMaskBeepEnd - pMask >= len)
-	{
-		memcpy(mask_data, pMask, len);
-		pMask += len;
-		if (pMask == pMaskBeepEnd)
-			pMask = maskbeep;
-	}
-	else{
-		int firstPartLen = pMaskBeepEnd - pMask;
-		memcpy(mask_data, pMask, firstPartLen);
-		int secondPartLen = len - firstPartLen;
-		pMask = maskbeep;
-		memcpy(mask_data + firstPartLen, pMask, secondPartLen);
-		pMask += secondPartLen;
-	}
-	return pMask;
-}
 
 int decoder_input(decode_t *deco, const str *data, unsigned long ts, ssrc_t *ssrc) {
 	decoder_t *dec = deco->dec;
@@ -251,15 +230,21 @@ void decoder_free(decode_t *deco) {
 	g_slice_free1(sizeof(*deco), deco);
 }
 
-void decoder_start_mask_beep(decode_t * deco, ssrc_t* ssrc, time_t timediff) {
+void decoder_start_mask_beep(decode_t * deco, ssrc_t* ssrc, long timediff, void* extra) {
 	deco->pause_start_pts = deco->dec->pts;
 }
 
-void decoder_stop_mask_beep(decode_t * deco, ssrc_t* ssrc, time_t timediff) {
+void decoder_stop_mask_beep(decode_t * deco, ssrc_t* ssrc, long timediff, void* extra) {
 	deco->pause_start_pts = -1L;
 }
 
-void decoder_insert_mask_beep(decode_t * deco, ssrc_t* ssrc, time_t timediff) {
+void decoder_insert_mask_beep_packet(decode_t * deco, ssrc_t* ssrc, long delta_pts, void* pMaskData) {
+	decoder_t *dec = deco->dec;
+	unsigned long ts = dec->rtp_ts + ((str *)pMaskData)->len;
+	decoder_input_data(dec, pMaskData, ts, decoder_got_frame, ssrc, deco);
+}
+/*
+void decoder_insert_mask_beep(decode_t * deco, ssrc_t* ssrc, long timediff, void* extra) {
 	decoder_t *dec = deco->dec;
 	int nb_samples = 160;
 	uint64_t delta_pts = timediff * (dec->in_format.clockrate / 1000);
@@ -292,3 +277,4 @@ void decoder_insert_mask_beep(decode_t * deco, ssrc_t* ssrc, time_t timediff) {
 		usleep(1000);
 	}
 }
+*/
