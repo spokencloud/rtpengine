@@ -1,15 +1,28 @@
-# %%global _gitrev a4cca5f
+# %%global _gitrev 47e32b2
 # _gitrev define is used only if patching to build with commits from master that are not in a release.
-# To use _gitrev and patching, uncomment top line by removing the "#" and one of the 2 percent signs.
+# To use _gitrev and patching, use command line to define "_version" and "_gitrev",
+# or edit & uncomment top line by removing the "#" and one of the 2 percent signs,
+# and set _version below.
 
-# If using a patchfile to apply updates to a release, set _gitrev to the hash of the commit,
-# and create a patchfile with updates from the last release:
-# From the rtpengine git repository with the master branch checked out:
-# git diff --patch --stat mr7.2.1.4 > ~/rpmbuild/SOURCES/rtpengine-7.2.1.4-2.gita4cca5f.patch
+# To build a variant (i.e. "develop") of a release branch:
+# From fork of repo with variant branch checked out (i.e. "develop"),
+# assuming develop branch is based on branch mr7.3.1.1
+#
+# git checkout develop
+# export GITREV=`git log --pretty=format:'%h' -n 1`
+# export VERSION="7.3.1.1"
+# git diff --patch mr${VERSION} develop > ~/rpmbuild/SOURCES/rtpengine-${VERSION}-0.git${GITREV}.el7.patch
+# rpmbuild  -ba ~/rpmbuild/SPECS/rtpengine.spec --define "_gitrev $GITREV" --define "_version $VERSION"
+
+
+# mr version may be defined here or via command line:  --define "7.3.1.1"
+%if 0%{!?_version:1}
+%global _version 7.3.1.1
+%endif
 
 Summary: Sipwise NGCP RTP media proxy
 Name: rtpengine
-Version: 7.3.1.1
+Version: %{_version}
 Release: 0%{?_gitrev:.git%{_gitrev}}%{?dist}
 License: GPLv3
 URL: https://github.com/sipwise/rtpengine
@@ -21,7 +34,7 @@ Source2: %{name}-recording.service
 Source3: %{name}.tmpfilesd
 Source4: %{name}-rtp.xml
 
-# if _gitrev is defined at the top, apply the patch file to bring the release tarfile up to date
+# if _gitrev is defined at the top or on command line, apply the patch file to bring the release tarfile up to date
 %if 0%{?_gitrev:1}
 Patch0: %{name}-%{version}-%{release}.patch
 %endif
@@ -43,6 +56,7 @@ BuildRequires: perl-generators
 BuildRequires: perl-IPC-Cmd
 BuildRequires: perl-podlators
 BuildRequires: pkgconfig
+BuildRequires: spandsp-devel
 BuildRequires: systemd-devel
 BuildRequires: xmlrpc-c-devel
 BuildRequires: zlib-devel
@@ -111,18 +125,6 @@ Requires(preun): dkms
 %prep
 %autosetup -n %{name}-mr%{version} -p1
 
-# source file edits
-
-# set recording daemon wav file output for 2 channels, 16-bits
-sed -i '/stereo mixing goes here.*/a \\tout_format.channels = 2;\n\tout_format.format = AV_SAMPLE_FMT_S16;'  recording-daemon/decoder.c
-# set output wav file for mu-law codec
-# sed -i 's/str_init(&codec, "PCM-S16LE");/str_init(&codec, "PCM-MULAW");/' recording-daemon/output.c
-
-# set mixer to join channels to stereo output instead of mixing together
-sed -i 's/define NUM_INPUTS 4/define NUM_INPUTS 2/' recording-daemon/mix.c
-sed -i 's/no amix filter available/no amerge filter available/' recording-daemon/mix.c
-sed -i 's/avfilter_get_by_name("amix");/avfilter_get_by_name("amerge");/' recording-daemon/mix.c
-
 # create small source files for CentOS here which are not in sipwise rtpengine repo
 cat <<EOF > %{_sourcedir}/%{name}.service
 [Unit]
@@ -152,9 +154,10 @@ After=rtpengine.service
 Requires=rtpengine.service
 
 [Service]
+LimitNOFILE=50000
 Type=notify
 User=rtpengine
-ExecStart=/usr/sbin/rtpengine-recording -f --config-file=/etc/rtpengine/rtpengine.conf --config-section=rtpengine-recording --pidfile=/run/rtpengine/rtpengine-recording.pid
+ExecStart=/usr/sbin/rtpengine-recording -f --config-file=/etc/rtpengine/rtpengine-recording.conf --config-section=rtpengine-recording --pidfile=/run/rtpengine/rtpengine-recording.pid
 PIDFile=/run/rtpengine/rtpengine-recording.pid
 Restart=on-failure
 RestartSec=30
@@ -174,19 +177,21 @@ cat <<EOF > %{_sourcedir}/%{name}-rtp.xml
   <description>Sipwise NGCP RTP media proxy - RTP transport</description>
   <port port="30000-40000" protocol="udp"/>
 </service>
-0EOF
+EOF
 
 %build
 export RTPENGINE_VERSION=%{version}-%{release}
 
 %make_build -C daemon
 %make_build -C iptables-extension
-%make_build -C recording-daemon
+# Set recording-daemon build to single job, parallel build sometimes fails
+%make_build -j1 -C recording-daemon
 
 %install
 # Install configuration
 mkdir -p %{buildroot}%{_sysconfdir}/%{name}
 install -D -m 0644 etc/%{name}.sample.conf %{buildroot}%{_sysconfdir}/%{name}/%{name}.conf
+install -D -m 0644 etc/%{name}-recording.sample.conf %{buildroot}%{_sysconfdir}/%{name}/%{name}-recording.conf
 
 # Install systemd service, and systemd-tmpfilesd files
 mkdir -p %{buildroot}%{_unitdir}
@@ -220,6 +225,7 @@ install -D -p -m 755 utils/%{name}-ctl %{buildroot}%{_sbindir}/%{name}-ctl
 # Create directories for PCAP and WAV recordings
 mkdir -p -m 0700 %{buildroot}%{_localstatedir}/spool/rtpengine
 mkdir -p -m 0700 %{buildroot}%{_localstatedir}/lib/rtpengine-recording
+mkdir -p -m 0700 %{buildroot}%{_localstatedir}/lib/rtpengine-recording/upload
 
 ## DKMS module source install
 install -D -p -m644 kernel-module/Makefile \
@@ -240,7 +246,6 @@ sed -i -e "s/ngcp-rtpengine/rtpengine/g" %{buildroot}%{_usrsrc}/%{name}-%{versio
 %{_sbindir}/useradd --comment "Sipwise NGCP rtpengine Daemon User" \
   --home /run/rtpengine --shell /sbin/nologin --system \
   --user-group rtpengine &>/dev/null || :
-
 
 %pre kernel
 # Update modeprobe.d option file with uid and gid of rtpengine user
@@ -296,7 +301,7 @@ true
 %{_mandir}/man8/%{name}.8*
 %{_sbindir}/%{name}
 %{_sbindir}/%{name}-ctl
-%{_unitdir}/%{name}.service
+%config(noreplace) %{_unitdir}/%{name}.service
 %{_tmpfilesdir}/%{name}.conf
 %dir %attr(0700, rtpengine, rtpengine) %{_localstatedir}/spool/rtpengine
 
@@ -313,8 +318,10 @@ true
 
 %files recording-daemon
 %{_sbindir}/%{name}-recording
-%{_unitdir}/%{name}-recording.service
+%config(noreplace) %{_unitdir}/%{name}-recording.service
 %dir %attr(0700, rtpengine, rtpengine) %{_localstatedir}/lib/rtpengine-recording
+%dir %attr(0700, rtpengine, rtpengine) %{_localstatedir}/lib/rtpengine-recording/upload
+%config(noreplace) %{_sysconfdir}/%{name}/%{name}-recording.conf
 
 %files dkms
 %{_usrsrc}/%{name}-%{version}-%{release}/
