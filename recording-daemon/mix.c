@@ -43,6 +43,7 @@ struct mix_s {
 	int timer_fd;
     handler_t timer_handler;
 	time_t start_time;
+    metafile_t *metafile;
 };
 
 static int NUM_INPUTS  = MAX_NUM_INPUTS;
@@ -178,10 +179,11 @@ err:
 }
 
 
-mix_t *mix_new() {
+mix_t *mix_new(metafile_t *mf) {
 	if (strcmp(mix_filter, "amerge") == 0)
 		NUM_INPUTS = 2;				// we just merge two mono streams to one stereo stream.
 	mix_t *mix = g_slice_alloc0(sizeof(*mix));
+	mix->metafile = mf;
 	format_init(&mix->input_format);
 	format_init(&mix->out_format);
 	mix->sink_frame = av_frame_alloc();
@@ -215,13 +217,13 @@ static int mix_get_frame_and_output(mix_t *mix, output_t *output) {
 
 #define MIX_TIMER_INTERVAL 1
 
-static void log_repeated_error(int err_count, const char* err, int ret){
+static void log_repeated_error(int err_count, const char* err, int ret, const char * call_id){
 	char errmsg[256];
 	errmsg[0] = 0;
 	av_strerror(ret, errmsg, sizeof(errmsg));
 	if (err != NULL && err_count > 0) {
 		if (err_count == 1)
-			ilog(LOG_ERR, "Failure in max_add: %s(ret=%d, err=%s)", err, ret, errmsg);
+			ilog(LOG_ERR, "[%s] Failure in max_add: %s(ret=%d, err=%s)",call_id, err, ret, errmsg);
 		else 
 			ilog(LOG_ERR, "Failure in max_add: %s (ret=%d, err=%s, happened %d times in last %d seconds)", 
 						err, ret, errmsg, err_count, MIX_TIMER_INTERVAL);
@@ -232,7 +234,7 @@ static void log_repeated_error(int err_count, const char* err, int ret){
 // if this is a new error, flush the old errors and then output the new error
 // if this is a repeated error, just increase the count
 // this method assumes that err is a literal string so it does not allocate any space for err
-static void throttle_error_output(const char* err, int ret){
+static void throttle_error_output(const char* err, int ret, const char * call_id){
 	static const char *last_err = NULL;
 	static int last_ret = 0;
 	static int err_count = 0;
@@ -242,14 +244,14 @@ static void throttle_error_output(const char* err, int ret){
 			err_count++;
 			return;
 		}	
-		log_repeated_error(err_count, last_err, last_ret);
-		log_repeated_error(1, err, ret);		// output new error immediately
+		log_repeated_error(err_count, last_err, last_ret,call_id);
+		log_repeated_error(1, err, ret,call_id);		// output new error immediately
 		last_err = err;
 		last_ret = ret;
 	}
 	else {	// if err is NULL, just flush old errors
 		if (err_count > 0)
-			log_repeated_error(err_count, last_err, last_ret);
+			log_repeated_error(err_count, last_err, last_ret,call_id);
 	}
 	err_count = 0;
 }
@@ -297,7 +299,7 @@ static void mix_silence_fill_idx_upto(mix_t *mix, unsigned int idx, uint64_t upt
 		}
 		ret = mix_get_frame_and_output(mix, output);
 		if (ret < 0 && ret != AVERROR(EAGAIN)) {
-			throttle_error_output("failed to get frame from mixer", ret);
+			throttle_error_output("failed to get frame from mixer", ret,mix->metafile->call_id);
 		}
 	}
 }
@@ -373,7 +375,7 @@ int mix_add(mix_t *mix, AVFrame *frame, unsigned int idx, output_t *output) {
 	return 0;
 
 err:
-	throttle_error_output(err, ret);
+	throttle_error_output(err, ret,mix->metafile->call_id);
 	av_frame_free(&frame);
 	return -1;
 }
@@ -384,7 +386,7 @@ static void mix_timer_handler(handler_t *handler) {
     if (mix == NULL)
         return;
     read(mix->timer_fd, &exp, sizeof(uint64_t));
-	throttle_error_output(NULL, 0);	
+	throttle_error_output(NULL, 0,mix->metafile->call_id);
 }
 
 int mix_timer_init(mix_t *mix) {
@@ -401,7 +403,7 @@ int mix_timer_init(mix_t *mix) {
 
 int mix_timer_destroy(mix_t *mix)
 {
-	throttle_error_output(NULL, 0);
+	throttle_error_output(NULL, 0,mix->metafile->call_id);
     if (mix->timer_fd != -1) {
     	timerfd_destroy(mix->timer_fd);
     	mix->timer_fd = -1;

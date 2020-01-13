@@ -250,7 +250,7 @@ static void packet_decode(ssrc_t *ssrc, packet_t *packet) {
 		if (!payload_str) {
 			const struct rtp_payload_type *rpt = rtp_get_rfc_payload_type(payload_type);
 			if (!rpt) {
-				ilog(LOG_WARN, "Unknown RTP payload type %u", payload_type);
+				ilog(LOG_WARN, "[%s] Unknown RTP payload type %u",mf->call_id, payload_type);
 				return;
 			}
 			payload_str = rpt->encoding_with_params.s;

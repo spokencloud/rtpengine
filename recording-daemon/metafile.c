@@ -121,7 +121,7 @@ static void meta_stream_interface(metafile_t *mf, unsigned long snum, char *cont
 
 			snprintf(buf, sizeof(buf), "%s-%s-mix", mf->parent, connectionUid);
 			mf->mix_out = output_new(output_dir, buf);
-			mf->mix = mix_new();
+			mf->mix = mix_new(mf);
 			db_do_stream(mf, mf->mix_out, "mixed", NULL, 0);
 		}
 		pthread_mutex_unlock(&mf->mix_lock);
