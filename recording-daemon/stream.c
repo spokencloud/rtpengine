@@ -55,7 +55,7 @@ static void stream_handler(handler_t *handler) {
 	int ret = read(stream->fd, buf, MAXBUFLEN);
 	
 	if (ret == 0) {
-		ilog(LOG_INFO, "EOF on stream %s", stream->name);
+		ilog(LOG_INFO, "[%s] EOF on stream %s",stream->metafile->call_id, stream->name);
 		stream_close(stream);
 #if  _WITH_AH_CLIENT
 		ahclient_close_stream(stream->metafile, stream->id);

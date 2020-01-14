@@ -5,7 +5,7 @@
 #include <libavutil/frame.h>
 
 
-mix_t *mix_new(void);
+mix_t *mix_new(metafile_t *);
 void mix_destroy(mix_t *mix);
 
 int mix_get_out_channels(int input_channels);
