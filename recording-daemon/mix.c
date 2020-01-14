@@ -225,8 +225,8 @@ static void log_repeated_error(int err_count, const char* err, int ret, const ch
 		if (err_count == 1)
 			ilog(LOG_ERR, "[%s] Failure in max_add: %s(ret=%d, err=%s)",call_id, err, ret, errmsg);
 		else 
-			ilog(LOG_ERR, "Failure in max_add: %s (ret=%d, err=%s, happened %d times in last %d seconds)", 
-						err, ret, errmsg, err_count, MIX_TIMER_INTERVAL);
+			ilog(LOG_ERR, "[%s] Failure in max_add: %s (ret=%d, err=%s, happened %d times in last %d seconds)", 
+						call_id, err, ret, errmsg, err_count, MIX_TIMER_INTERVAL);
 	}
 }
 
