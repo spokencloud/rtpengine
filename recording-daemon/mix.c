@@ -215,7 +215,7 @@ static int mix_get_frame_and_output(mix_t *mix, output_t *output) {
 	return ret;
 }
 
-#define MIX_TIMER_INTERVAL 1
+#define MIX_TIMER_INTERVAL 10
 
 static void log_repeated_error(int err_count, const char* err, int ret, const char * call_id){
 	char errmsg[256];
@@ -223,9 +223,9 @@ static void log_repeated_error(int err_count, const char* err, int ret, const ch
 	av_strerror(ret, errmsg, sizeof(errmsg));
 	if (err != NULL && err_count > 0) {
 		if (err_count == 1)
-			ilog(LOG_ERR, "[%s] Failure in max_add: %s(ret=%d, err=%s)",call_id, err, ret, errmsg);
+			ilog(LOG_ERR, "[%s] Failure in mix_add: %s(ret=%d, err=%s)",call_id, err, ret, errmsg);
 		else 
-			ilog(LOG_ERR, "[%s] Failure in max_add: %s (ret=%d, err=%s, happened %d times in last %d seconds)", 
+			ilog(LOG_ERR, "[%s] Failure in mix_add: %s (ret=%d, err=%s, happened %d times in last %d seconds)",
 						call_id, err, ret, errmsg, err_count, MIX_TIMER_INTERVAL);
 	}
 }
@@ -244,7 +244,6 @@ static void throttle_error_output(const char* err, int ret, const char * call_id
 			err_count++;
 			return;
 		}	
-		log_repeated_error(err_count, last_err, last_ret,call_id);
 		log_repeated_error(1, err, ret,call_id);		// output new error immediately
 		last_err = err;
 		last_ret = ret;
